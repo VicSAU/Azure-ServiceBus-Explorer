@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import { Send, Eye, Download, MessageCircle, CheckCircle } from 'lucide-react';
+import JsonView from '@uiw/react-json-view';
 import { Card } from './ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Button } from './ui/button';
@@ -24,6 +25,8 @@ export function MessageOperations({ manager, selectedEntity, isConnected }: Mess
     const [selectedSubscription, setSelectedSubscription] = useState<string>('');
     const [subscriptions, setSubscriptions] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [batchSize] = useState(10);
+    const [canLoadMore, setCanLoadMore] = useState(false);
 
     useEffect(() => {
         if (selectedEntity?.type === 'topic') {
@@ -98,7 +101,7 @@ export function MessageOperations({ manager, selectedEntity, isConnected }: Mess
         }
     };
 
-    const handlePeekMessages = async () => {
+    const handlePeekMessages = async (append = false) => {
         if (!selectedEntity) {
             toast.warning('Please select a queue or topic first');
             return;
@@ -113,12 +116,18 @@ export function MessageOperations({ manager, selectedEntity, isConnected }: Mess
         try {
             let messages;
             if (selectedEntity.type === 'queue') {
-                messages = await manager.peekMessagesFromQueue(selectedEntity.name);
+                messages = await manager.peekMessagesFromQueue(selectedEntity.name, batchSize);
             } else {
-                messages = await manager.peekMessagesFromSubscription(selectedEntity.name, selectedSubscription);
+                messages = await manager.peekMessagesFromSubscription(selectedEntity.name, selectedSubscription, batchSize);
             }
 
-            setReceivedMessages(messages);
+            if (append) {
+                setReceivedMessages(prev => [...prev, ...messages]);
+            } else {
+                setReceivedMessages(messages);
+            }
+
+            setCanLoadMore(messages.length === batchSize);
             toast.success(`Found ${messages.length} message(s)`);
         } catch (error) {
             toast.error(`Failed to peek messages: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -127,7 +136,7 @@ export function MessageOperations({ manager, selectedEntity, isConnected }: Mess
         }
     };
 
-    const handleReceiveMessages = async (completeMessages: boolean) => {
+    const handleReceiveMessages = async (completeMessages: boolean, append = false) => {
         if (!selectedEntity) {
             toast.warning('Please select a queue or topic first');
             return;
@@ -142,17 +151,23 @@ export function MessageOperations({ manager, selectedEntity, isConnected }: Mess
         try {
             let messages;
             if (selectedEntity.type === 'queue') {
-                messages = await manager.receiveMessagesFromQueue(selectedEntity.name, 10, completeMessages);
+                messages = await manager.receiveMessagesFromQueue(selectedEntity.name, batchSize, completeMessages);
             } else {
                 messages = await manager.receiveMessagesFromSubscription(
                     selectedEntity.name,
                     selectedSubscription,
-                    10,
+                    batchSize,
                     completeMessages
                 );
             }
 
-            setReceivedMessages(messages);
+            if (append) {
+                setReceivedMessages(prev => [...prev, ...messages]);
+            } else {
+                setReceivedMessages(messages);
+            }
+
+            setCanLoadMore(messages.length === batchSize);
             const action = completeMessages ? 'received and completed' : 'received';
             toast.success(`${messages.length} message(s) ${action}`);
         } catch (error) {
@@ -194,7 +209,7 @@ export function MessageOperations({ manager, selectedEntity, isConnected }: Mess
                         <SelectTrigger>
                             <SelectValue placeholder="Select subscription" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="bg-stone-200">
                             {subscriptions.map((sub) => (
                                 <SelectItem key={sub} value={sub}>
                                     {sub}
@@ -251,26 +266,47 @@ export function MessageOperations({ manager, selectedEntity, isConnected }: Mess
                 </TabsContent>
 
                 <TabsContent value="peek" className="space-y-4">
-                    <Button onClick={handlePeekMessages} disabled={isLoading} className="w-full">
-                        <Eye className="h-4 w-4 mr-2" />
-                        {isLoading ? 'Peeking...' : 'Peek Messages (non-destructive)'}
-                    </Button>
+                    <div className="flex gap-2">
+                        <Button onClick={() => handlePeekMessages(false)} disabled={isLoading} className="flex-1">
+                            <Eye className="h-4 w-4 mr-2" />
+                            {isLoading ? 'Peeking...' : 'Peek Messages'}
+                        </Button>
+                        {receivedMessages.length > 0 && (
+                            <Button onClick={() => setReceivedMessages([])} variant="outline" disabled={isLoading}>
+                                Clear
+                            </Button>
+                        )}
+                    </div>
 
                     {receivedMessages.length > 0 && (
-                        <div className="space-y-2 max-h-96 overflow-y-auto">
-                            {receivedMessages.map((msg, idx) => (
-                                <div key={idx} className="p-3 bg-muted rounded-lg">
-                                    <div className="font-mono text-sm">
-                                        <strong>ID:</strong> {msg.messageId}
+                        <div className="space-y-2">
+                            <div className="text-sm text-muted-foreground">
+                                Showing {receivedMessages.length} message(s)
+                            </div>
+                            <div className="space-y-2 max-h-96 overflow-y-auto">
+                                {receivedMessages.map((msg, idx) => (
+                                    <div key={idx} className="p-3 bg-muted rounded-lg">
+                                        <div className="font-mono text-sm">
+                                            <strong>ID:</strong> {msg.messageId}
+                                        </div>
+                                        <div className="mt-2">
+                                            <strong className="font-mono text-sm">Body:</strong>
+                                            <div className="mt-1 p-2 bg-white rounded border">
+                                                {typeof msg.body === 'object' && msg.body !== null ? (
+                                                    <JsonView value={msg.body} />
+                                                ) : (
+                                                    <pre className="font-mono text-sm whitespace-pre-wrap">{String(msg.body)}</pre>
+                                                )}
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="font-mono text-sm mt-2">
-                                        <strong>Body:</strong>{' '}
-                                        <pre className="mt-1 whitespace-pre-wrap">
-                                            {typeof msg.body === 'object' ? JSON.stringify(msg.body, null, 2) : msg.body}
-                                        </pre>
-                                    </div>
-                                </div>
-                            ))}
+                                ))}
+                            </div>
+                            {canLoadMore && (
+                                <Button onClick={() => handlePeekMessages(true)} disabled={isLoading} variant="outline" className="w-full">
+                                    {isLoading ? 'Loading...' : 'Load More'}
+                                </Button>
+                            )}
                         </div>
                     )}
                 </TabsContent>
@@ -278,7 +314,7 @@ export function MessageOperations({ manager, selectedEntity, isConnected }: Mess
                 <TabsContent value="receive" className="space-y-4">
                     <div className="flex gap-2">
                         <Button
-                            onClick={() => handleReceiveMessages(false)}
+                            onClick={() => handleReceiveMessages(false, false)}
                             disabled={isLoading}
                             variant="outline"
                             className="flex-1"
@@ -287,7 +323,7 @@ export function MessageOperations({ manager, selectedEntity, isConnected }: Mess
                             {isLoading ? 'Receiving...' : 'Receive (Keep)'}
                         </Button>
                         <Button
-                            onClick={() => handleReceiveMessages(true)}
+                            onClick={() => handleReceiveMessages(true, false)}
                             disabled={isLoading}
                             variant="destructive"
                             className="flex-1"
@@ -295,23 +331,47 @@ export function MessageOperations({ manager, selectedEntity, isConnected }: Mess
                             <CheckCircle className="h-4 w-4 mr-2" />
                             {isLoading ? 'Receiving...' : 'Receive & Complete'}
                         </Button>
+                        {receivedMessages.length > 0 && (
+                            <Button onClick={() => setReceivedMessages([])} variant="outline" disabled={isLoading}>
+                                Clear
+                            </Button>
+                        )}
                     </div>
 
                     {receivedMessages.length > 0 && (
-                        <div className="space-y-2 max-h-96 overflow-y-auto">
-                            {receivedMessages.map((msg, idx) => (
-                                <div key={idx} className="p-3 bg-muted rounded-lg">
-                                    <div className="font-mono text-sm">
-                                        <strong>ID:</strong> {msg.messageId}
+                        <div className="space-y-2">
+                            <div className="text-sm text-muted-foreground">
+                                Showing {receivedMessages.length} message(s)
+                            </div>
+                            <div className="space-y-2 max-h-96 overflow-y-auto">
+                                {receivedMessages.map((msg, idx) => (
+                                    <div key={idx} className="p-3 bg-muted rounded-lg">
+                                        <div className="font-mono text-sm">
+                                            <strong>ID:</strong> {msg.messageId}
+                                        </div>
+                                        <div className="mt-2">
+                                            <strong className="font-mono text-sm">Body:</strong>
+                                            <div className="mt-1 p-2 bg-white rounded border">
+                                                {typeof msg.body === 'object' && msg.body !== null ? (
+                                                    <JsonView value={msg.body} collapsed={1} />
+                                                ) : (
+                                                    <pre className="font-mono text-sm whitespace-pre-wrap">{String(msg.body)}</pre>
+                                                )}
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="font-mono text-sm mt-2">
-                                        <strong>Body:</strong>{' '}
-                                        <pre className="mt-1 whitespace-pre-wrap">
-                                            {typeof msg.body === 'object' ? JSON.stringify(msg.body, null, 2) : msg.body}
-                                        </pre>
-                                    </div>
+                                ))}
+                            </div>
+                            {canLoadMore && (
+                                <div className="flex gap-2">
+                                    <Button onClick={() => handleReceiveMessages(false, true)} disabled={isLoading} variant="outline" className="flex-1">
+                                        {isLoading ? 'Loading...' : 'Load More (Keep)'}
+                                    </Button>
+                                    <Button onClick={() => handleReceiveMessages(true, true)} disabled={isLoading} variant="outline" className="flex-1">
+                                        {isLoading ? 'Loading...' : 'Load More & Complete'}
+                                    </Button>
                                 </div>
-                            ))}
+                            )}
                         </div>
                     )}
                 </TabsContent>

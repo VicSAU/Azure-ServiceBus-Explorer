@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ServiceBusClient } from '@azure/service-bus';
+import { gunzipSync } from 'zlib';
 
 export async function POST(request: NextRequest) {
     let sbClient: ServiceBusClient | null = null;
@@ -32,13 +33,33 @@ export async function POST(request: NextRequest) {
         try {
             const receivedMessages = await receiver.receiveMessages(maxMessages, { maxWaitTimeInMs: 5000 });
 
-            const messages = receivedMessages.map((msg) => ({
-                messageId: msg.messageId,
-                body: msg.body,
-                properties: msg.applicationProperties || {},
-                enqueuedTimeUtc: msg.enqueuedTimeUtc,
-                sequenceNumber: msg.sequenceNumber?.toString(),
-            }));
+            const messages = receivedMessages.map((msg) => {
+                let body = msg.body;
+
+                if (Buffer.isBuffer(body) && body.length >= 2 && body[0] === 0x1f && body[1] === 0x8b) {
+                    try {
+                        const decompressed = gunzipSync(body);
+                        body = decompressed.toString('utf-8');
+                    } catch (e) {
+                        console.error('Failed to decompress message:', e);
+                    }
+                }
+
+                if (typeof body === 'string') {
+                    try {
+                        body = JSON.parse(body);
+                    } catch (e) {
+                    }
+                }
+
+                return {
+                    messageId: msg.messageId,
+                    body: body,
+                    properties: msg.applicationProperties || {},
+                    enqueuedTimeUtc: msg.enqueuedTimeUtc,
+                    sequenceNumber: msg.sequenceNumber?.toString(),
+                };
+            });
 
             if (completeMessages) {
                 for (const msg of receivedMessages) {
