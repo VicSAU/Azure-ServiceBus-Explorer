@@ -13,6 +13,7 @@ export async function POST(request: NextRequest) {
             subscription,
             maxMessages = 10,
             completeMessages = false,
+            subQueue,
         } = await request.json();
 
         if (!connectionString || !entityName || !entityType) {
@@ -25,10 +26,12 @@ export async function POST(request: NextRequest) {
 
         sbClient = new ServiceBusClient(connectionString);
 
+        const receiverOptions = subQueue === 'deadLetter' ? { subQueueType: 'deadLetter' as const } : undefined;
+
         const receiver =
             entityType === 'queue'
-                ? sbClient.createReceiver(entityName)
-                : sbClient.createReceiver(entityName, subscription);
+                ? sbClient.createReceiver(entityName, receiverOptions)
+                : sbClient.createReceiver(entityName, subscription, receiverOptions);
 
         try {
             const receivedMessages = await receiver.receiveMessages(maxMessages, { maxWaitTimeInMs: 5000 });

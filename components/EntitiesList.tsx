@@ -129,7 +129,7 @@ export function EntitiesList({
                                     </div>
                                     {topic.subscriptions && topic.subscriptions.length > 0 && (
                                         <div className="text-sm opacity-80 mt-2 ml-6">
-                                            Subscriptions: {topic.subscriptions.join(', ')}
+                                            Subscriptions: {topic.subscriptions.map(sub => sub.name).join(', ')}
                                         </div>
                                     )}
                                 </div>

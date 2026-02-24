@@ -6,7 +6,7 @@ export async function POST(request: NextRequest) {
     let sbClient: ServiceBusClient | null = null;
 
     try {
-        const { connectionString, entityName, entityType, subscription, maxMessages = 10 } = await request.json();
+        const { connectionString, entityName, entityType, subscription, maxMessages = 10, subQueue } = await request.json();
 
         if (!connectionString || !entityName || !entityType) {
             return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
@@ -18,10 +18,12 @@ export async function POST(request: NextRequest) {
 
         sbClient = new ServiceBusClient(connectionString);
 
+        const receiverOptions = subQueue === 'deadLetter' ? { subQueueType: 'deadLetter' as const } : undefined;
+
         const receiver =
             entityType === 'queue'
-                ? sbClient.createReceiver(entityName)
-                : sbClient.createReceiver(entityName, subscription);
+                ? sbClient.createReceiver(entityName, receiverOptions)
+                : sbClient.createReceiver(entityName, subscription, receiverOptions);
 
         try {
             const peekedMessages = await receiver.peekMessages(maxMessages);

@@ -27,7 +27,21 @@ export async function POST(request: NextRequest) {
                 for await (const topic of adminClient.listTopics()) {
                     const subscriptions = [];
                     for await (const subscription of adminClient.listSubscriptions(topic.name)) {
-                        subscriptions.push(subscription.subscriptionName);
+                        try {
+                            const runtimeProps = await adminClient.getSubscriptionRuntimeProperties(
+                                topic.name,
+                                subscription.subscriptionName
+                            );
+                            subscriptions.push({
+                                name: subscription.subscriptionName,
+                                activeMessageCount: runtimeProps.activeMessageCount,
+                                deadLetterMessageCount: runtimeProps.deadLetterMessageCount,
+                            });
+                        } catch (err) {
+                            subscriptions.push({
+                                name: subscription.subscriptionName,
+                            });
+                        }
                     }
                     topics.push({
                         name: topic.name,

@@ -7,9 +7,15 @@ export interface QueueInfo {
     scheduledMessageCount?: number;
 }
 
+export interface SubscriptionInfo {
+    name: string;
+    activeMessageCount?: number;
+    deadLetterMessageCount?: number;
+}
+
 export interface TopicInfo {
     name: string;
-    subscriptions?: string[];
+    subscriptions?: SubscriptionInfo[];
 }
 
 export interface MessageInfo {
@@ -244,6 +250,119 @@ export class ServiceBusManager {
 
         if (!response.ok) {
             throw new Error(data.error || 'Failed to receive messages');
+        }
+
+        return data.messages;
+    }
+
+    async peekDeadLetterMessagesFromQueue(queueName: string, maxMessages: number = 10): Promise<MessageInfo[]> {
+        if (!this.connectionString) {
+            throw new Error('Not connected to Service Bus');
+        }
+
+        const response = await fetch('/api/servicebus/peek', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                connectionString: this.connectionString,
+                entityName: queueName,
+                entityType: 'queue',
+                maxMessages,
+                subQueue: 'deadLetter',
+            }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to peek deadletter messages');
+        }
+
+        return data.messages;
+    }
+
+    async peekDeadLetterMessagesFromSubscription(topicName: string, subscriptionName: string, maxMessages: number = 10): Promise<MessageInfo[]> {
+        if (!this.connectionString) {
+            throw new Error('Not connected to Service Bus');
+        }
+
+        const response = await fetch('/api/servicebus/peek', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                connectionString: this.connectionString,
+                entityName: topicName,
+                entityType: 'topic',
+                subscription: subscriptionName,
+                maxMessages,
+                subQueue: 'deadLetter',
+            }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to peek deadletter messages');
+        }
+
+        return data.messages;
+    }
+
+    async receiveDeadLetterMessagesFromQueue(queueName: string, maxMessages: number = 10, completeMessages: boolean = false): Promise<MessageInfo[]> {
+        if (!this.connectionString) {
+            throw new Error('Not connected to Service Bus');
+        }
+
+        const response = await fetch('/api/servicebus/receive', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                connectionString: this.connectionString,
+                entityName: queueName,
+                entityType: 'queue',
+                maxMessages,
+                completeMessages,
+                subQueue: 'deadLetter',
+            }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to receive deadletter messages');
+        }
+
+        return data.messages;
+    }
+
+    async receiveDeadLetterMessagesFromSubscription(
+        topicName: string,
+        subscriptionName: string,
+        maxMessages: number = 10,
+        completeMessages: boolean = false
+    ): Promise<MessageInfo[]> {
+        if (!this.connectionString) {
+            throw new Error('Not connected to Service Bus');
+        }
+
+        const response = await fetch('/api/servicebus/receive', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                connectionString: this.connectionString,
+                entityName: topicName,
+                entityType: 'topic',
+                subscription: subscriptionName,
+                maxMessages,
+                completeMessages,
+                subQueue: 'deadLetter',
+            }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to receive deadletter messages');
         }
 
         return data.messages;
